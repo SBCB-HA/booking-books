@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build và kiểm thử
+dist/
+coverage/
+*.tsbuildinfo
+
+# Biến môi trường
+.env
+.env.*
+!.env.example
+
+# Log
+*.log
+# Environment
+.env
+.env.*
+!.env.example
+
+# Test và cache
+coverage/
+*.tsbuildinfo
+
+# Generated Prisma Client
+backend/generated/prisma/
+backend/src/generated/prisma/
