@@ -25,3 +25,9 @@ coverage/
 # Generated Prisma Client
 backend/generated/prisma/
 backend/src/generated/prisma/
+.agents/
+.claude/
+.windsurf/
+AGENTS.md
+CLAUDE.md
+skills-lock.json
