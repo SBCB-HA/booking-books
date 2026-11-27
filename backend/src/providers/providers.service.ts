@@ -1,129 +1,137 @@
-import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+    BadRequestException,
+    ConflictException,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
+import { randomUUID } from 'node:crypto';
 import { Provider } from './entites/providers.entity.js';
 import { CreateProviderDTO } from './dto/create-provider.dto.js';
-import { randomUUID } from 'crypto';
 import { UpdateProviderDTO } from './dto/update-provider.dto.js';
-import { QueryFailedError } from 'typeorm';
+
+const NOT_FOUND = 'Không tìm thấy Provider';
+const DUPLICATE = 'Email hoặc số điện thoại đã được sử dụng';
+
 @Injectable()
 export class ProvidersService {
-
     constructor(
-        @InjectRepository(Provider) private readonly providers: Repository<Provider>) { }
+        @InjectRepository(Provider)
+        private readonly providers: Repository<Provider>,
+    ) { }
 
     async findAll() {
-        const pro = await this.providers.find({
-            where: { isActive: true },
-        });
-        return pro;
+        return this.providers.find({ where: { isActive: true } });
     }
+
     async findProvider(id: string) {
-        const provider = await this.providers.findOneBy({ // findBy tra ve 1 mang , chi tiet phai findOneBy
-            id,
-        })
+        const provider = await this.providers.findOneBy({ id, isActive: true });
         if (!provider) {
-            throw new NotFoundException('KHONG TIM THAY PROVIDER');
+            throw new NotFoundException(NOT_FOUND);
         }
         return provider;
     }
+
     async createProvider(dto: CreateProviderDTO) {
-        const a = await this.providers.findBy(
-            [{ phone: dto.phone }, { email: dto.email }]
-        )
-        if (a.length > 0) {
-            throw new ConflictException("DA CO SO DIEN THOAI OR EMAIL");
-        }
-        const id = randomUUID();
-        const provider = this.providers.create(
-            {
-                id,
-                name: dto.name,
-                email: dto.email,
-                phone: dto.phone,
-                description: dto.description,
-                address: dto.address,
-                isActive: true,
+        const email = dto.email.trim().toLowerCase();
+        const phone = dto.phone.trim();
 
-
-            }
-        )
-        const savedProvider = await this.providers.save(provider);
-        return savedProvider;
-    }
-    async updateProvider(dto: UpdateProviderDTO, id: string) {
-        const provider = await this.providers.findOneBy({ id });
-
-        if (!provider) {
-            throw new NotFoundException('Không tìm thấy Provider');
+        if (await this.providers.findOneBy([{ email }, { phone }])) {
+            throw new ConflictException(DUPLICATE);
         }
 
-        const hasUpdate = [
-            dto.name,
-            dto.email,
-            dto.phone,
-            dto.description,
-            dto.address,
-        ].some((value) => value !== undefined);
-
-        if (!hasUpdate) {
-            throw new BadRequestException('Cần ít nhất một trường để cập nhật');
-        }
-
-        if (dto.email !== undefined) {
-            const existing = await this.providers.findOneBy({
-                email: dto.email,
-            });
-
-            if (existing && existing.id !== id) {
-                throw new ConflictException('Email đã được sử dụng');
-            }
-        }
-
-        if (dto.phone !== undefined) {
-            const existing = await this.providers.findOneBy({
-                phone: dto.phone,
-            });
-
-            if (existing && existing.id !== id) {
-                throw new ConflictException('Số điện thoại đã được sử dụng');
-            }
-        }
-
-        if (dto.name !== undefined) provider.name = dto.name;
-        if (dto.email !== undefined) provider.email = dto.email;
-        if (dto.phone !== undefined) provider.phone = dto.phone;
-        if (dto.description !== undefined) {
-            provider.description = dto.description;
-        }
-        if (dto.address !== undefined) provider.address = dto.address;
+        const provider = this.providers.create({
+            id: randomUUID(),
+            name: dto.name,
+            email,
+            phone,
+            description: dto.description,
+            address: dto.address,
+            isActive: true,
+        });
 
         try {
             return await this.providers.save(provider);
         } catch (error) {
-            if (
-                error instanceof QueryFailedError &&
-                (error.driverError as { code?: string }).code === '23505'
-            ) {
-                throw new ConflictException('Email hoặc số điện thoại đã được sử dụng');
-            }
-
-            throw error;
+            this.rethrowDatabaseError(error);
         }
-
     }
+
+    async updateProvider(dto: UpdateProviderDTO, id: string) {
+        const changes = {
+            name: dto.name,
+            email: dto.email?.trim().toLowerCase(),
+            phone: dto.phone?.trim(),
+            description: dto.description,
+            address: dto.address,
+        };
+
+        if (!Object.values(changes).some((value) => value !== undefined)) {
+            throw new BadRequestException('Cần ít nhất một trường để cập nhật');
+        }
+
+        if ([dto.name, dto.email, dto.phone, dto.address].some((value) => value === null)) {
+            throw new BadRequestException('Tên, email, số điện thoại và địa chỉ không được là null');
+        }
+
+        // Chỉ ghi những trường được gửi lên
+        const definedChanges = Object.fromEntries(
+            Object.entries(changes).filter(([, value]) => value !== undefined),
+        );
+
+        try {
+            return await this.providers.manager.transaction(async (manager) => {
+                const repository = manager.getRepository(Provider);
+
+                const existing = await repository.findOne({
+                    where: { id },
+                    lock: { mode: 'pessimistic_write' },
+                });
+
+                if (!existing) {
+                    throw new NotFoundException(NOT_FOUND);
+                }
+
+                if (changes.email !== undefined) {
+                    const other = await repository.findOneBy({ email: changes.email });
+                    if (other && other.id !== id) {
+                        throw new ConflictException('Email đã được sử dụng');
+                    }
+                }
+
+                if (changes.phone !== undefined) {
+                    const other = await repository.findOneBy({ phone: changes.phone });
+                    if (other && other.id !== id) {
+                        throw new ConflictException('Số điện thoại đã được sử dụng');
+                    }
+                }
+
+                await repository.update({ id }, definedChanges);
+
+                return repository.findOneByOrFail({ id });
+            });
+        } catch (error) {
+            this.rethrowDatabaseError(error);
+        }
+    }
+
     async deleteProvider(id: string): Promise<void> {
-        const provider = await this.providers.findOneBy({ id });
+        // Một câu UPDATE, không đọc trước; xóa lại cùng ID vẫn thành công
+        const result = await this.providers.update({ id }, { isActive: false });
 
-        if (!provider) {
-            throw new NotFoundException('Không tìm thấy Provider');
+        if (!result.affected) {
+            throw new NotFoundException(NOT_FOUND);
         }
+    }
 
-        if (!provider.isActive) {
-            return;
+    private rethrowDatabaseError(error: unknown): never {
+        if (
+            error instanceof QueryFailedError &&
+            (error.driverError as { code?: string }).code === '23505'
+        ) {
+            throw new ConflictException(DUPLICATE);
         }
-
-        provider.isActive = false;
-        await this.providers.save(provider);
+        throw error;
     }
 }
