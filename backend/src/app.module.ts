@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
-// import { ProvidersModule } from './providers/providers.module.js';
+import { ProvidersModule } from './providers/providers.module.js';
 // import { RoomsModule } from './rooms/rooms.module.js';
 
 @Module({
@@ -23,7 +23,7 @@ import { AuthModule } from './auth/auth.module.js';
     }),
   }),
   AuthModule,
-  // ProvidersModule,
+  ProvidersModule,
   // RoomsModule,
 ],
   controllers: [AppController],
