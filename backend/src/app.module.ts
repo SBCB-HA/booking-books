@@ -5,7 +5,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
-// import { RoomsModule } from './rooms/rooms.module.js';
+import { RoomsModule } from './rooms/rooms.module.js';
 
 @Module({
   imports: [
@@ -24,7 +24,7 @@ import { ProvidersModule } from './providers/providers.module.js';
   }),
   AuthModule,
   ProvidersModule,
-  // RoomsModule,
+  RoomsModule,
 ],
   controllers: [AppController],
   providers: [AppService],
