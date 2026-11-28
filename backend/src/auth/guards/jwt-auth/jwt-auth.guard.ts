@@ -1,42 +1,76 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import type { Request } from 'express';
-type JwtPayLoad = {
-  sub : string;
-  role : string;
-};
+import { Repository } from 'typeorm';
+import { Role, User } from '../../../users/entities/user.entity.js';
+
 export type AuthenticatedRequest = Request & {
-  user?: JwtPayLoad;
+  user?: {
+    sub: string;
+    role: Role;
+  };
 };
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
- constructor (private readonly jwtService : JwtService) {}
- async canActivate(context : ExecutionContext) :Promise <boolean> {
-  const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+  constructor(
+    private readonly jwtService: JwtService,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
+  ) {}
 
-  const token = request.cookies?.access_token;
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context
+      .switchToHttp()
+      .getRequest<AuthenticatedRequest>();
 
+    const token = request.cookies?.access_token;
 
     if (typeof token !== 'string' || !token) {
       throw new UnauthorizedException('Bạn chưa đăng nhập');
     }
 
-    let payload : JwtPayLoad;
+    let payload: { sub?: unknown };
 
     try {
-      payload = await this.jwtService.verifyAsync<JwtPayLoad>(token, {
-        algorithms :['HS256'],
-      });
+      payload = await this.jwtService.verifyAsync<{ sub?: unknown }>(
+        token,
+        { algorithms: ['HS256'] },
+      );
     } catch {
-      throw new UnauthorizedException('Phien dang nhap khong hop le hoac da het han');
+      throw new UnauthorizedException(
+        'Phiên đăng nhập không hợp lệ hoặc đã hết hạn',
+      );
     }
 
     if (typeof payload.sub !== 'string' || !payload.sub) {
       throw new UnauthorizedException('Token không hợp lệ');
     }
 
-    request.user = payload;
+    const user = await this.users.findOne({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Tài khoản không hoạt động');
+    }
+
+    request.user = {
+      sub: user.id,
+      role: user.role,
+    };
 
     return true;
- }
+  }
 }
