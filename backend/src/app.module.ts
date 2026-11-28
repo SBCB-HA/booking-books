@@ -6,6 +6,7 @@ import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { RoomsModule } from './rooms/rooms.module.js';
+import { RoomBlocksModule } from './room-blocks/room-blocks.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { RoomsModule } from './rooms/rooms.module.js';
   AuthModule,
   ProvidersModule,
   RoomsModule,
+  RoomBlocksModule,
 ],
   controllers: [AppController],
   providers: [AppService],
